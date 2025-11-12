@@ -1,0 +1,238 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row mt-4">
+    <div class="col-md-4">
+        <div class="card shadow-sm">
+            <div class="card-header bg-primary text-white">
+                <h5><i class="fas fa-upload"></i> Upload do Laudo</h5>
+            </div>
+            <div class="card-body">
+                <form id="uploadForm" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="fileInput" class="form-label">Selecione o arquivo (PDF ou Markdown)</label>
+                        <input type="file" class="form-control" id="fileInput" accept=".pdf,.md,.markdown" required>
+                        <small class="text-muted">Formatos: PDF, MD, MARKDOWN (máx 16MB)</small>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="fas fa-cloud-upload-alt"></i> Carregar Laudo
+                    </button>
+                </form>
+                
+                <div id="uploadStatus" class="mt-3"></div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm mt-3" id="laudoInfo" style="display: none;">
+            <div class="card-header bg-info text-white">
+                <h6><i class="fas fa-info-circle"></i> Dados do Laudo</h6>
+            </div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <tr>
+                        <td><strong>Placa:</strong></td>
+                        <td id="infoPlaca">-</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Valor Aprovado:</strong></td>
+                        <td id="infoValor">-</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Participação:</strong></td>
+                        <td id="infoParticipacao">-</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Economia:</strong></td>
+                        <td id="infoEconomia">-</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Status:</strong></td>
+                        <td><span class="badge bg-warning" id="infoStatus">Pendente</span></td>
+                    </tr>
+                </table>
+                
+                <div id="docsPendentes" style="display: none;">
+                    <strong class="text-danger">Documentos Pendentes:</strong>
+                    <ul id="listaDocs" class="mt-2"></ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-8">
+        <div class="card shadow-sm">
+            <div class="card-header bg-success text-white">
+                <h5><i class="fas fa-file-alt"></i> Visualização do Laudo</h5>
+            </div>
+            <div class="card-body" style="max-height: 600px; overflow-y: auto;">
+                <div id="laudoContent">
+                    <div class="text-center text-muted py-5">
+                        <i class="fas fa-file-upload fa-3x mb-3"></i>
+                        <p>Aguardando upload do laudo...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm mt-3" id="approvalPanel" style="display: none;">
+            <div class="card-header bg-warning">
+                <h5><i class="fas fa-gavel"></i> Decisão Jurídica</h5>
+            </div>
+            <div class="card-body">
+                <form id="approvalForm">
+                    <div class="mb-3">
+                        <label class="form-label"><strong>Decisão:</strong></label>
+                        <div class="btn-group w-100" role="group">
+                            <input type="radio" class="btn-check" name="decisao" id="aprovar" value="APROVADO" required>
+                            <label class="btn btn-outline-success" for="aprovar">
+                                <i class="fas fa-check-circle"></i> APROVAR
+                            </label>
+
+                            <input type="radio" class="btn-check" name="decisao" id="reprovar" value="REPROVADO">
+                            <label class="btn btn-outline-danger" for="reprovar">
+                                <i class="fas fa-times-circle"></i> REPROVAR
+                            </label>
+
+                            <input type="radio" class="btn-check" name="decisao" id="pendente" value="PENDENTE">
+                            <label class="btn btn-outline-warning" for="pendente">
+                                <i class="fas fa-clock"></i> PENDENTE
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="observacoes" class="form-label">Observações:</label>
+                        <textarea class="form-control" id="observacoes" rows="3" placeholder="Digite suas observações (opcional)"></textarea>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="fas fa-save"></i> Confirmar Decisão
+                    </button>
+                </form>
+
+                <div id="decisionResult" class="mt-3"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentFilename = '';
+
+document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const fileInput = document.getElementById('fileInput');
+    const file = fileInput.files[0];
+    
+    if (!file) {
+        showStatus('Selecione um arquivo!', 'danger');
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    showStatus('Carregando arquivo...', 'info');
+    
+    try {
+        const response = await fetch('/upload', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            currentFilename = data.filename;
+            document.getElementById('laudoContent').innerHTML = data.content;
+            
+            // Atualizar informações
+            if (data.laudo_data) {
+                updateLaudoInfo(data.laudo_data);
+            }
+            
+            document.getElementById('approvalPanel').style.display = 'block';
+            showStatus('Arquivo carregado com sucesso!', 'success');
+        } else {
+            showStatus(data.error || 'Erro ao carregar arquivo', 'danger');
+        }
+    } catch (error) {
+        showStatus('Erro ao conectar com servidor: ' + error.message, 'danger');
+    }
+});
+
+document.getElementById('approvalForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const decisao = document.querySelector('input[name="decisao"]:checked').value;
+    const observacoes = document.getElementById('observacoes').value;
+    
+    try {
+        const response = await fetch('/approve', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                filename: currentFilename,
+                decisao: decisao,
+                observacoes: observacoes
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showDecisionResult(data.message, 'success');
+            document.getElementById('infoStatus').textContent = decisao;
+            document.getElementById('infoStatus').className = 
+                decisao === 'APROVADO' ? 'badge bg-success' : 
+                decisao === 'REPROVADO' ? 'badge bg-danger' : 'badge bg-warning';
+        } else {
+            showDecisionResult(data.error || 'Erro ao processar decisão', 'danger');
+        }
+    } catch (error) {
+        showDecisionResult('Erro ao conectar com servidor: ' + error.message, 'danger');
+    }
+});
+
+function updateLaudoInfo(data) {
+    document.getElementById('infoPlaca').textContent = data.placa || '-';
+    document.getElementById('infoValor').textContent = data.valor_aprovado || '-';
+    document.getElementById('infoParticipacao').textContent = data.participacao || '-';
+    document.getElementById('infoEconomia').textContent = data.economia || '-';
+    
+    if (data.documentos_pendentes && data.documentos_pendentes.length > 0) {
+        const lista = document.getElementById('listaDocs');
+        lista.innerHTML = '';
+        data.documentos_pendentes.forEach(doc => {
+            const li = document.createElement('li');
+            li.textContent = doc;
+            lista.appendChild(li);
+        });
+        document.getElementById('docsPendentes').style.display = 'block';
+    }
+    
+    document.getElementById('laudoInfo').style.display = 'block';
+}
+
+function showStatus(message, type) {
+    const status = document.getElementById('uploadStatus');
+    status.innerHTML = `<div class="alert alert-${type} alert-dismissible fade show" role="alert">
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>`;
+}
+
+function showDecisionResult(message, type) {
+    const result = document.getElementById('decisionResult');
+    result.innerHTML = `<div class="alert alert-${type} alert-dismissible fade show" role="alert">
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>`;
+}
+</script>
+{% endblock %}
